@@ -40,6 +40,8 @@
     .tarea.prio-Rojo { border-left-color: #d92d20; }
     .tarea.prio-Amarillo { border-left-color: #f79009; }
     .tarea.prio-Verde { border-left-color: #12b76a; }
+    .tarea.finalizada { opacity: 0.55; filter: grayscale(45%); border-left-color: #98a2b3; }
+    .tarea.finalizada .btnCerrar { background: #d0d5dd; color: #667085; }
 
     .tarea .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
     .tarea .id { font-size: 12px; color: #667085; }
@@ -296,6 +298,13 @@
       });
     }
 
+    // Estados que ya no requieren más acción del técnico -> se muestran grisados.
+    // "Requiere Segunda Visita" / "Requiere Continuidad" quedan activos a propósito.
+    const ESTADOS_FINALIZADOS = ['Resuelto', 'Cancelado'];
+    function estaFinalizada(estado) {
+      return ESTADOS_FINALIZADOS.includes(estado);
+    }
+
     function labelPrioridad(p) {
       if (p === 'Rojo') return '🔴 Alta';
       if (p === 'Amarillo') return '🟡 Media';
@@ -350,8 +359,10 @@
         cont.innerHTML = '<div id="loading">No hay tareas para este filtro.</div>';
         return;
       }
-      cont.innerHTML = tareas.map(t => `
-        <div class="tarea prio-${t.prioridad || 'Verde'}">
+      cont.innerHTML = tareas.map(t => {
+        const finalizada = estaFinalizada(t.estado);
+        return `
+        <div class="tarea prio-${t.prioridad || 'Verde'}${finalizada ? ' finalizada' : ''}">
           <div class="top">
             <span class="id">${t.id}</span>
             <div class="badges">
@@ -364,15 +375,18 @@
           <p><strong>${t.tipoFalla}:</strong> ${t.descripcion}</p>
           ${t.ubicacion && t.ubicacion !== 'Sin ubicación' ? `<a href="${t.ubicacion}" target="_blank">📍 Ver ubicación</a>` : ''}
           <div class="btnRow">
-            <select onchange="cambiarPrioridadCliente(${t.fila}, this.value)" style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+            <select onchange="cambiarPrioridadCliente(${t.fila}, this.value)" ${finalizada ? 'disabled' : ''} style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
               <option value="Rojo" ${t.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
               <option value="Amarillo" ${t.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
               <option value="Verde" ${t.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
             </select>
-            <button class="btnCerrar" onclick='abrirModalCliente(${JSON.stringify(t)})'>Cerrar trabajo</button>
+            ${finalizada
+              ? `<button class="btnCerrar" disabled>Ya finalizado</button>`
+              : `<button class="btnCerrar" onclick='abrirModalCliente(${JSON.stringify(t)})'>Cerrar trabajo</button>`}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     function cambiarPrioridadCliente(fila, prioridad) {
@@ -508,8 +522,10 @@
         cont.innerHTML = '<div id="loadingObras">No hay tareas internas para este filtro.</div>';
         return;
       }
-      cont.innerHTML = obras.map(o => `
-        <div class="tarea prio-${o.prioridad || 'Verde'}">
+      cont.innerHTML = obras.map(o => {
+        const finalizada = estaFinalizada(o.estado);
+        return `
+        <div class="tarea prio-${o.prioridad || 'Verde'}${finalizada ? ' finalizada' : ''}">
           <div class="top">
             <span class="id">${o.id}</span>
             <div class="badges">
@@ -523,15 +539,18 @@
           ${o.tecnico ? `<p>Asignado a: ${o.tecnico}</p>` : ''}
           ${o.fechaProgramada ? `<p>Programada: ${o.fechaProgramada}</p>` : ''}
           <div class="btnRow">
-            <select onchange="cambiarPrioridadObra(${o.fila}, this.value)" style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+            <select onchange="cambiarPrioridadObra(${o.fila}, this.value)" ${finalizada ? 'disabled' : ''} style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
               <option value="Rojo" ${o.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
               <option value="Amarillo" ${o.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
               <option value="Verde" ${o.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
             </select>
-            <button class="btnCerrar" onclick='abrirModalObra(${JSON.stringify(o)})'>Cerrar tarea</button>
+            ${finalizada
+              ? `<button class="btnCerrar" disabled>Ya finalizada</button>`
+              : `<button class="btnCerrar" onclick='abrirModalObra(${JSON.stringify(o)})'>Cerrar tarea</button>`}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     function cambiarPrioridadObra(fila, prioridad) {
