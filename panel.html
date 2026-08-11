@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Panel Técnico — ProLink</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      background: #f2f4f7;
+      margin: 0;
+      padding: 14px 10px 60px;
+      color: #1a1a1a;
+    }
+    h1 { font-size: 19px; margin: 6px 4px 10px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; margin: 0 4px 14px; }
+    .tabBtn {
+      flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #d0d5dd;
+      background: #fff; font-size: 13px; font-weight: 600; color: #475467;
+    }
+    .tabBtn.active { background: #1570ef; border-color: #1570ef; color: #fff; }
+
+    .filtros {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 14px; padding: 0 4px;
+    }
+    .filtros input, .filtros select {
+      flex: 1; min-width: 120px;
+      padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px;
+    }
+
+    .tarea {
+      background: #fff; border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+      border-left: 6px solid #d0d5dd;
+    }
+    .tarea.prio-Rojo { border-left-color: #d92d20; }
+    .tarea.prio-Amarillo { border-left-color: #f79009; }
+    .tarea.prio-Verde { border-left-color: #12b76a; }
+
+    .tarea .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .tarea .id { font-size: 12px; color: #667085; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+    }
+    .badge.Pendiente { background: #fef0c7; color: #b54708; }
+    .badge.En.proceso { background: #d1e9ff; color: #175cd3; }
+    .badge.Resuelto { background: #d1fadf; color: #027a48; }
+    .badge.Cancelado { background: #f2f4f7; color: #667085; }
+    .badge.Requiere.Segunda.Visita { background: #fee4e2; color: #b42318; }
+    .badge.prio-Rojo { background: #fee4e2; color: #b42318; }
+    .badge.prio-Amarillo { background: #fef0c7; color: #b54708; }
+    .badge.prio-Verde { background: #d1fadf; color: #027a48; }
+
+    .tarea h3 { margin: 6px 0 2px; font-size: 16px; }
+    .tarea p { margin: 2px 0; font-size: 13px; color: #475467; }
+    .tarea a { font-size: 12px; color: #1570ef; }
+    .btnRow { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .btnRow button {
+      flex: 1; min-width: 110px; padding: 9px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600;
+    }
+    .btnCerrar { background: #1570ef; color: #fff; }
+    .btnPrioridad { background: #eef2ff; color: #1570ef; }
+
+    /* Modal */
+    .overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 10; align-items: flex-end; justify-content: center;
+    }
+    .modalBox {
+      background: #fff; width: 100%; max-width: 500px; border-radius: 16px 16px 0 0;
+      padding: 20px 18px 30px; max-height: 88vh; overflow-y: auto;
+    }
+    .modalBox h2 { font-size: 17px; margin: 0 0 12px; }
+    .modalBox label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+    .modalBox input, .modalBox select, .modalBox textarea {
+      width: 100%; padding: 10px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px;
+    }
+    .articulo {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px;
+    }
+    .articulo label { flex: 1; margin: 0; font-weight: 400; }
+    .articulo input[type=number] { width: 60px; }
+    .totalLinea { font-size: 16px; font-weight: 700; margin-top: 10px; }
+    .modalBtns { display: flex; gap: 10px; margin-top: 18px; }
+    .modalBtns button { flex: 1; padding: 12px; border-radius: 8px; border: none; font-weight: 600; }
+    .cancelar { background: #f2f4f7; color: #344054; }
+    .confirmar { background: #1570ef; color: #fff; }
+    #loading, #loadingObras { text-align: center; color: #667085; padding: 30px; }
+  </style>
+</head>
+<body>
+  <div style="text-align:center; padding: 6px 0 2px;">
+    <img id="logoProLink" alt="ProLink" style="height:48px;">
+  </div>
+  <h1>📋 Panel Técnico</h1>
+
+  <div class="tabs">
+    <button class="tabBtn active" id="tabBtnClientes" onclick="cambiarTab('clientes')">Reclamos de Clientes</button>
+    <button class="tabBtn" id="tabBtnObras" onclick="cambiarTab('obras')">Obras y Mantenimiento</button>
+  </div>
+
+  <!-- ===================== TAB CLIENTES ===================== -->
+  <div id="tabClientes">
+    <div class="filtros">
+      <input type="text" id="fBusqueda" placeholder="Buscar cliente / dirección">
+      <select id="fEstado">
+        <option value="Todos">Todos los estados</option>
+        <option>Pendiente</option>
+        <option>En proceso</option>
+        <option>Resuelto</option>
+        <option>Requiere Segunda Visita</option>
+        <option>Cancelado</option>
+      </select>
+      <select id="fPrioridad">
+        <option value="Todas">Toda prioridad</option>
+        <option value="Rojo">🔴 Alta</option>
+        <option value="Amarillo">🟡 Media</option>
+        <option value="Verde">🟢 Baja</option>
+      </select>
+      <select id="fZona">
+        <option value="Todas">Todas las zonas</option>
+      </select>
+    </div>
+
+    <div id="listaTareas"><div id="loading">Cargando tareas...</div></div>
+  </div>
+
+  <!-- ===================== TAB OBRAS Y MANTENIMIENTO ===================== -->
+  <div id="tabObras" style="display:none">
+    <p style="font-size:12px;color:#667085;margin:0 4px 14px">
+      Las obras, mantenimientos y emergencias las carga la administración directamente en la planilla.
+      Acá solo podés consultarlas y cerrarlas cuando termines el trabajo.
+    </p>
+
+    <div class="filtros">
+      <input type="text" id="fBusquedaObra" placeholder="Buscar título / zona">
+      <select id="fTipoObra">
+        <option value="Todos">Todos los tipos</option>
+        <option>Obra</option>
+        <option>Mantenimiento</option>
+        <option>Emergencia</option>
+      </select>
+      <select id="fEstadoObra">
+        <option value="Todos">Todos los estados</option>
+        <option>Pendiente</option>
+        <option>En proceso</option>
+        <option>Resuelto</option>
+        <option>Cancelado</option>
+      </select>
+      <select id="fPrioridadObra">
+        <option value="Todas">Toda prioridad</option>
+        <option value="Rojo">🔴 Alta</option>
+        <option value="Amarillo">🟡 Media</option>
+        <option value="Verde">🟢 Baja</option>
+      </select>
+    </div>
+
+    <div id="listaObras"><div id="loadingObras">Cargando tareas internas...</div></div>
+  </div>
+
+  <!-- ===================== MODAL: Cerrar trabajo de CLIENTE ===================== -->
+  <div class="overlay" id="cOverlay">
+    <div class="modalBox">
+      <h2>Cerrar trabajo</h2>
+      <input type="hidden" id="cIdReclamo">
+      <input type="hidden" id="cFilaReclamo">
+
+      <label>Técnico</label>
+      <input type="text" id="cTecnico" placeholder="Tu nombre">
+
+      <label>Diagnóstico y solución realizada</label>
+      <textarea id="cDiagnostico"></textarea>
+
+      <label>Tipo de falla confirmado</label>
+      <select id="cTipoFalla">
+        <option value="Externa">Externa (mantenimiento de red - sin costo)</option>
+        <option value="Interna">Interna / accidente (con cobro)</option>
+      </select>
+
+      <div id="cCatalogoBox">
+        <label>Artículos / servicios utilizados</label>
+        <p style="font-size:12px;color:#667085;margin:0 0 6px">
+          Seleccioná igual los ítems usados aunque la falla sea externa: si no se cobra al cliente,
+          la empresa reconoce esa mano de obra al técnico en la liquidación.
+        </p>
+        <div id="cListaCatalogo"></div>
+        <div class="totalLinea" id="cTotalCobrado">Total a cobrar al cliente: $0</div>
+        <div style="font-size:14px;color:#175cd3;font-weight:600;margin-top:4px" id="cTotalEmpresa">Total a pagar por la empresa: $0</div>
+      </div>
+
+      <label>Materiales usados (detalle libre)</label>
+      <input type="text" id="cMateriales">
+
+      <label>Método de pago recibido</label>
+      <select id="cMetodoPago">
+        <option>Pendiente de Cobro en Factura</option>
+        <option>Efectivo</option>
+        <option>Transferencia</option>
+      </select>
+      <p style="font-size:11px;color:#667085;margin:4px 0 0">
+        Si elegís Efectivo o Transferencia, al confirmar se genera y descarga automáticamente
+        el comprobante en PDF para enviarle al cliente por WhatsApp.
+      </p>
+
+      <label>Estado final</label>
+      <select id="cEstadoFinal">
+        <option>Resuelto</option>
+        <option>Requiere Segunda Visita</option>
+        <option>Cancelado</option>
+      </select>
+
+      <div class="modalBtns">
+        <button class="cancelar" onclick="cerrarModal('cOverlay')">Cancelar</button>
+        <button class="confirmar" onclick="confirmarCierreCliente()">Confirmar cierre</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: Cerrar tarea de OBRA/MANTENIMIENTO ===================== -->
+  <div class="overlay" id="oOverlay">
+    <div class="modalBox">
+      <h2>Cerrar tarea interna</h2>
+      <input type="hidden" id="oIdTarea">
+      <input type="hidden" id="oFilaTarea">
+
+      <label>Técnico</label>
+      <input type="text" id="oTecnico" placeholder="Tu nombre">
+
+      <label>Trabajo realizado</label>
+      <textarea id="oTrabajoRealizado"></textarea>
+
+      <label>Ítems del catálogo consumidos</label>
+      <div id="oListaCatalogo"></div>
+      <div class="totalLinea" id="oTotal">Total a liquidar: $0</div>
+
+      <label>Materiales usados (detalle libre)</label>
+      <input type="text" id="oMateriales">
+
+      <label>Estado final</label>
+      <select id="oEstadoFinal">
+        <option>Resuelto</option>
+        <option>Requiere Continuidad</option>
+        <option>Cancelado</option>
+      </select>
+
+      <div class="modalBtns">
+        <button class="cancelar" onclick="cerrarModal('oOverlay')">Cancelar</button>
+        <button class="confirmar" onclick="confirmarCierreObra()">Confirmar cierre</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ⚠️ Pegá acá la URL "/exec" de tu implementación de Codigo_API_Panel.gs
+    const API_URL = 'PEGAR_AQUI_LA_URL_DEL_API_PANEL';
+    // ⚠️ Tiene que ser IDÉNTICO al CONFIG.API_TOKEN que pusiste en Codigo_API_Panel.gs
+    const API_TOKEN = 'cambiar-este-token';
+
+    function apiPanel(action, payload) {
+      payload = payload || {};
+      payload.token = API_TOKEN;
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight CORS
+        body: JSON.stringify({ action, payload })
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) throw new Error(res.error || 'Error desconocido');
+          return res.data;
+        });
+    }
+
+    // Carga el logo de forma asincrónica
+    apiPanel('logoDataUri', {})
+      .then(uri => { if (uri) document.getElementById('logoProLink').src = uri; })
+      .catch(err => console.error('No se pudo cargar el logo:', err.message));
+
+    // ==================== ESTADO GLOBAL ====================
+    let catalogo = [];          // catálogo clientes
+    let catalogoObras = [];     // catálogo obras/mantenimiento
+    let tareaActual = null;     // tarea de cliente seleccionada
+    let obraActual = null;      // tarea interna seleccionada
+
+    const ORDEN_PRIORIDAD = { Rojo: 0, Amarillo: 1, Verde: 2 };
+
+    function ordenarPorPrioridad(lista, campo) {
+      if (!Array.isArray(lista)) return [];
+      return lista.slice().sort((a, b) => {
+        const pa = ORDEN_PRIORIDAD[a[campo]] ?? 3;
+        const pb = ORDEN_PRIORIDAD[b[campo]] ?? 3;
+        return pa - pb;
+      });
+    }
+
+    function labelPrioridad(p) {
+      if (p === 'Rojo') return '🔴 Alta';
+      if (p === 'Amarillo') return '🟡 Media';
+      if (p === 'Verde') return '🟢 Baja';
+      return p || '—';
+    }
+
+    function cerrarModal(id) {
+      document.getElementById(id).style.display = 'none';
+    }
+
+    // ==================== TABS ====================
+    function cambiarTab(tab) {
+      document.getElementById('tabClientes').style.display = tab === 'clientes' ? 'block' : 'none';
+      document.getElementById('tabObras').style.display = tab === 'obras' ? 'block' : 'none';
+      document.getElementById('tabBtnClientes').classList.toggle('active', tab === 'clientes');
+      document.getElementById('tabBtnObras').classList.toggle('active', tab === 'obras');
+    }
+
+    // ==================== CATÁLOGOS ====================
+    function cargarCatalogo() {
+      apiPanel('obtenerCatalogo', {})
+        .then(c => { catalogo = c || []; })
+        .catch(err => alert('Error cargando catálogo de clientes: ' + err.message));
+    }
+    function cargarCatalogoObras() {
+      apiPanel('obtenerCatalogoObras', {})
+        .then(c => { catalogoObras = c || []; })
+        .catch(err => alert('Error cargando catálogo de obras: ' + err.message));
+    }
+
+    // ==================== RECLAMOS DE CLIENTES ====================
+    function cargarTareas() {
+      const filtros = {
+        busqueda: document.getElementById('fBusqueda').value,
+        estado: document.getElementById('fEstado').value,
+        zona: document.getElementById('fZona').value,
+        prioridad: document.getElementById('fPrioridad').value
+      };
+      apiPanel('obtenerTareas', { filtros })
+        .then(renderTareas)
+        .catch(err => {
+          document.getElementById('listaTareas').innerHTML =
+            '<div id="loading" style="color:#d92d20">Error cargando reclamos: ' + err.message + '</div>';
+        });
+    }
+
+    function renderTareas(tareas) {
+      tareas = ordenarPorPrioridad(tareas, 'prioridad');
+      const cont = document.getElementById('listaTareas');
+      if (!tareas.length) {
+        cont.innerHTML = '<div id="loading">No hay tareas para este filtro.</div>';
+        return;
+      }
+      cont.innerHTML = tareas.map(t => `
+        <div class="tarea prio-${t.prioridad || 'Verde'}">
+          <div class="top">
+            <span class="id">${t.id}</span>
+            <div class="badges">
+              <span class="badge prio-${t.prioridad || 'Verde'}">${labelPrioridad(t.prioridad)}</span>
+              <span class="badge ${String(t.estado).replace(/ /g, '.')}">${t.estado}</span>
+            </div>
+          </div>
+          <h3>${t.nombre}</h3>
+          <p>${t.direccion}${t.barrio ? ' (' + t.barrio + ')' : ''} — ${t.telefono}</p>
+          <p><strong>${t.tipoFalla}:</strong> ${t.descripcion}</p>
+          ${t.ubicacion && t.ubicacion !== 'Sin ubicación' ? `<a href="${t.ubicacion}" target="_blank">📍 Ver ubicación</a>` : ''}
+          <div class="btnRow">
+            <select onchange="cambiarPrioridadCliente(${t.fila}, this.value)" style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+              <option value="Rojo" ${t.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
+              <option value="Amarillo" ${t.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
+              <option value="Verde" ${t.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
+            </select>
+            <button class="btnCerrar" onclick='abrirModalCliente(${JSON.stringify(t)})'>Cerrar trabajo</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function cambiarPrioridadCliente(fila, prioridad) {
+      apiPanel('asignarPrioridad', { fila, prioridad, esInterna: false })
+        .then(() => cargarTareas())
+        .catch(err => alert('Error: ' + err.message));
+    }
+
+    function abrirModalCliente(t) {
+      tareaActual = t;
+      document.getElementById('cIdReclamo').value = t.id;
+      document.getElementById('cFilaReclamo').value = t.fila;
+      renderCatalogoCliente();
+      document.getElementById('cOverlay').style.display = 'flex';
+    }
+
+    document.getElementById('cTipoFalla').addEventListener('change', calcularTotalCliente);
+
+    function renderCatalogoCliente() {
+      const box = document.getElementById('cListaCatalogo');
+      box.innerHTML = catalogo.map((a, i) => `
+        <div class="articulo">
+          <input type="number" min="0" value="0" id="ccant_${i}" onchange="calcularTotalCliente()">
+          <label>${a.descripcion} — $${a.precioCliente}</label>
+        </div>
+      `).join('');
+      calcularTotalCliente();
+    }
+
+    function calcularTotalCliente() {
+      const tipoFalla = document.getElementById('cTipoFalla').value;
+      let totalCliente = 0;
+      let totalEmpresa = 0;
+      catalogo.forEach((a, i) => {
+        const cant = Number(document.getElementById('ccant_' + i).value) || 0;
+        totalEmpresa += cant * a.comisionTecnico;
+        if (tipoFalla === 'Interna') totalCliente += cant * a.precioCliente;
+      });
+      document.getElementById('cTotalCobrado').textContent =
+        tipoFalla === 'Interna'
+          ? 'Total a cobrar al cliente: $' + totalCliente
+          : 'Total a cobrar al cliente: $0 (falla externa, cubierta)';
+      document.getElementById('cTotalEmpresa').textContent = 'Total a pagar por la empresa: $' + totalEmpresa;
+    }
+
+    function confirmarCierreCliente() {
+      const tipoFalla = document.getElementById('cTipoFalla').value;
+      const articulos = [];
+      catalogo.forEach((a, i) => {
+        const cant = Number(document.getElementById('ccant_' + i).value) || 0;
+        if (cant > 0) articulos.push({ ...a, cantidad: cant });
+      });
+
+      const data = {
+        idReclamo: document.getElementById('cIdReclamo').value,
+        filaReclamo: Number(document.getElementById('cFilaReclamo').value),
+        tecnico: document.getElementById('cTecnico').value,
+        diagnostico: document.getElementById('cDiagnostico').value,
+        tipoFallaConfirmado: tipoFalla,
+        articulos: articulos,
+        materiales: document.getElementById('cMateriales').value,
+        metodoPago: document.getElementById('cMetodoPago').value,
+        estadoFinal: document.getElementById('cEstadoFinal').value
+      };
+
+      apiPanel('cerrarTrabajo', { data })
+        .then(res => {
+          const clientePago = data.metodoPago === 'Efectivo' || data.metodoPago === 'Transferencia';
+          if (clientePago && res.montoCobrado > 0) {
+            emitirComprobantePDF(res, data);
+          } else {
+            cerrarModal('cOverlay');
+            cargarTareas();
+          }
+        })
+        .catch(err => alert('Error: ' + err.message));
+    }
+
+    function emitirComprobantePDF(resCierre, dataCierre) {
+      apiPanel('emitirComprobante', {
+        data: {
+          idReparacion: resCierre.id,
+          idReclamo: dataCierre.idReclamo,
+          filaReparacion: resCierre.filaReparacion,
+          cliente: tareaActual.nombre,
+          direccion: tareaActual.direccion,
+          monto: resCierre.montoCobrado,
+          tecnico: dataCierre.tecnico
+        }
+      })
+        .then(resComp => {
+          descargarComprobante(resComp.pdfBase64, resComp.numero);
+          cerrarModal('cOverlay');
+          cargarTareas();
+        })
+        .catch(err => {
+          alert('El trabajo se cerró, pero no se pudo generar el comprobante: ' + err.message);
+          cerrarModal('cOverlay');
+          cargarTareas();
+        });
+    }
+
+    function descargarComprobante(base64, numero) {
+      const link = document.createElement('a');
+      link.href = 'data:application/pdf;base64,' + base64;
+      link.download = 'Comprobante_' + numero + '.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      alert('Comprobante N° ' + numero + ' generado. Se descargó para que lo envíes por WhatsApp al cliente.');
+    }
+
+    // ==================== OBRAS Y MANTENIMIENTO ====================
+    function cargarObras() {
+      const filtros = {
+        busqueda: document.getElementById('fBusquedaObra').value,
+        tipo: document.getElementById('fTipoObra').value,
+        estado: document.getElementById('fEstadoObra').value,
+        prioridad: document.getElementById('fPrioridadObra').value
+      };
+      apiPanel('obtenerTareasInternas', { filtros })
+        .then(renderObras)
+        .catch(err => {
+          document.getElementById('listaObras').innerHTML =
+            '<div id="loadingObras" style="color:#d92d20">Error cargando obras: ' + err.message + '</div>';
+        });
+    }
+
+    function renderObras(obras) {
+      obras = ordenarPorPrioridad(obras, 'prioridad');
+      const cont = document.getElementById('listaObras');
+      if (!obras.length) {
+        cont.innerHTML = '<div id="loadingObras">No hay tareas internas para este filtro.</div>';
+        return;
+      }
+      cont.innerHTML = obras.map(o => `
+        <div class="tarea prio-${o.prioridad || 'Verde'}">
+          <div class="top">
+            <span class="id">${o.id}</span>
+            <div class="badges">
+              <span class="badge prio-${o.prioridad || 'Verde'}">${labelPrioridad(o.prioridad)}</span>
+              <span class="badge ${String(o.estado).replace(/ /g, '.')}">${o.estado}</span>
+            </div>
+          </div>
+          <h3>${o.titulo}</h3>
+          <p><strong>${o.tipo}</strong>${o.zona ? ' — ' + o.zona : ''}</p>
+          <p>${o.descripcion || ''}</p>
+          ${o.tecnico ? `<p>Asignado a: ${o.tecnico}</p>` : ''}
+          ${o.fechaProgramada ? `<p>Programada: ${o.fechaProgramada}</p>` : ''}
+          <div class="btnRow">
+            <select onchange="cambiarPrioridadObra(${o.fila}, this.value)" style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+              <option value="Rojo" ${o.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
+              <option value="Amarillo" ${o.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
+              <option value="Verde" ${o.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
+            </select>
+            <button class="btnCerrar" onclick='abrirModalObra(${JSON.stringify(o)})'>Cerrar tarea</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function cambiarPrioridadObra(fila, prioridad) {
+      apiPanel('asignarPrioridad', { fila, prioridad, esInterna: true })
+        .then(() => cargarObras())
+        .catch(err => alert('Error: ' + err.message));
+    }
+
+    function abrirModalObra(o) {
+      obraActual = o;
+      document.getElementById('oIdTarea').value = o.id;
+      document.getElementById('oFilaTarea').value = o.fila;
+      renderCatalogoObra();
+      document.getElementById('oOverlay').style.display = 'flex';
+    }
+
+    function renderCatalogoObra() {
+      const box = document.getElementById('oListaCatalogo');
+      box.innerHTML = catalogoObras.map((a, i) => `
+        <div class="articulo">
+          <input type="number" min="0" value="0" id="ocant_${i}" onchange="calcularTotalObra()">
+          <label>${a.descripcion} (${a.unidad}) — $${a.precioUnitario}/u</label>
+        </div>
+      `).join('');
+      calcularTotalObra();
+    }
+
+    function calcularTotalObra() {
+      let total = 0;
+      catalogoObras.forEach((a, i) => {
+        const cant = Number(document.getElementById('ocant_' + i).value) || 0;
+        total += cant * a.precioUnitario;
+      });
+      document.getElementById('oTotal').textContent = 'Total a liquidar: $' + total;
+    }
+
+    function confirmarCierreObra() {
+      const items = [];
+      catalogoObras.forEach((a, i) => {
+        const cant = Number(document.getElementById('ocant_' + i).value) || 0;
+        if (cant > 0) items.push({ ...a, cantidad: cant });
+      });
+
+      const data = {
+        idTarea: document.getElementById('oIdTarea').value,
+        filaTarea: Number(document.getElementById('oFilaTarea').value),
+        tecnico: document.getElementById('oTecnico').value,
+        trabajoRealizado: document.getElementById('oTrabajoRealizado').value,
+        items: items,
+        materiales: document.getElementById('oMateriales').value,
+        estadoFinal: document.getElementById('oEstadoFinal').value
+      };
+
+      apiPanel('cerrarTareaInterna', { data })
+        .then(() => {
+          cerrarModal('oOverlay');
+          cargarObras();
+        })
+        .catch(err => alert('Error: ' + err.message));
+    }
+
+    // ==================== INIT ====================
+    document.getElementById('fBusqueda').addEventListener('input', cargarTareas);
+    document.getElementById('fEstado').addEventListener('change', cargarTareas);
+    document.getElementById('fZona').addEventListener('change', cargarTareas);
+    document.getElementById('fPrioridad').addEventListener('change', cargarTareas);
+
+    document.getElementById('fBusquedaObra').addEventListener('input', cargarObras);
+    document.getElementById('fTipoObra').addEventListener('change', cargarObras);
+    document.getElementById('fEstadoObra').addEventListener('change', cargarObras);
+    document.getElementById('fPrioridadObra').addEventListener('change', cargarObras);
+
+    cargarCatalogo();
+    cargarCatalogoObras();
+    cargarTareas();
+    cargarObras();
+  </script>
+</body>
+</html>

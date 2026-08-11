@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reportar una falla — ProLink</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      background: #f2f4f7;
+      margin: 0;
+      padding: 20px 14px 60px;
+      color: #1a1a1a;
+    }
+    .card {
+      max-width: 480px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 14px;
+      padding: 22px 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p.sub { color: #667085; font-size: 13px; margin: 0 0 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      font-size: 15px;
+      background: #fff;
+    }
+    textarea { resize: vertical; min-height: 70px; }
+    button {
+      width: 100%;
+      margin-top: 22px;
+      padding: 13px;
+      border: none;
+      border-radius: 8px;
+      background: #1570ef;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    button:disabled { background: #98a2b3; }
+    .gps-status { font-size: 12px; color: #667085; margin-top: 6px; }
+    .ok { color: #12b76a; }
+    .err { color: #d92d20; }
+    #confirmacion { display:none; text-align:center; padding: 30px 10px; }
+    #confirmacion h2 { color: #12b76a; }
+  </style>
+</head>
+<body>
+  <div style="text-align:center; padding: 6px 0 2px;">
+    <img id="logoProLink" alt="ProLink" style="height:48px;">
+  </div>
+  <div class="card" id="formCard">
+    <h1>Reportar una falla</h1>
+    <p class="sub">Completá tus datos y contanos qué está pasando con tu conexión.</p>
+
+    <form id="reclamoForm">
+      <label>Nombre completo</label>
+      <input type="text" id="nombre" required>
+
+      <label>DNI / N° de Cliente</label>
+      <input type="text" id="dni" required>
+
+      <label>Dirección</label>
+      <input type="text" id="direccion" required>
+
+      <label>Barrio</label>
+      <input type="text" id="barrio" required>
+
+      <label>Teléfono de contacto</label>
+      <input type="tel" id="telefono" required>
+
+      <label>Tipo de falla</label>
+      <select id="tipoFalla" required>
+        <option value="">Seleccioná una opción</option>
+        <option>Sin conexión</option>
+        <option>Luz roja en ONT</option>
+        <option>Internet lento</option>
+        <option>Cable cortado</option>
+        <option>Otro</option>
+      </select>
+
+      <label>Descripción del problema</label>
+      <textarea id="descripcion" required></textarea>
+
+      <div class="gps-status" id="gpsStatus">Obteniendo tu ubicación...</div>
+
+      <button type="submit" id="btnEnviar">Enviar reclamo</button>
+    </form>
+  </div>
+
+  <div class="card" id="confirmacion">
+    <h2>¡Listo!</h2>
+    <p>Tu reclamo fue registrado con el número:</p>
+    <p style="font-size:20px;font-weight:700" id="idReclamo"></p>
+    <p style="color:#475467;font-size:14px;margin-top:10px">En el transcurso de las próximas horas un técnico se va a comunicar con vos para coordinar la visita.</p>
+  </div>
+
+  <script>
+    // ⚠️ Pegá acá la URL "/exec" de tu implementación de Codigo_API_Cliente.gs
+    const API_URL = 'PEGAR_AQUI_LA_URL_DEL_API_CLIENTE';
+
+    function apiCliente(action, payload) {
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight CORS
+        body: JSON.stringify({ action, payload })
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) throw new Error(res.error || 'Error desconocido');
+          return res.data;
+        });
+    }
+
+    // Logo (opcional, si configuraste LOGO_FILE_ID en el API)
+    apiCliente('logoDataUri', {})
+      .then(uri => { if (uri) document.getElementById('logoProLink').src = uri; })
+      .catch(() => {});
+
+    let lat = null, lng = null;
+    const gpsStatus = document.getElementById('gpsStatus');
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+          gpsStatus.textContent = '✓ Ubicación detectada correctamente';
+          gpsStatus.className = 'gps-status ok';
+        },
+        err => {
+          gpsStatus.textContent = 'No se pudo obtener la ubicación (podés continuar igual)';
+          gpsStatus.className = 'gps-status err';
+        },
+        { timeout: 8000 }
+      );
+    } else {
+      gpsStatus.textContent = 'Tu navegador no soporta geolocalización';
+      gpsStatus.className = 'gps-status err';
+    }
+
+    document.getElementById('reclamoForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const btn = document.getElementById('btnEnviar');
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+
+      const data = {
+        nombre: document.getElementById('nombre').value,
+        dni: document.getElementById('dni').value,
+        direccion: document.getElementById('direccion').value,
+        barrio: document.getElementById('barrio').value,
+        telefono: document.getElementById('telefono').value,
+        tipoFalla: document.getElementById('tipoFalla').value,
+        descripcion: document.getElementById('descripcion').value,
+        lat: lat,
+        lng: lng
+      };
+
+      apiCliente('registrarReclamo', { data })
+        .then(res => {
+          document.getElementById('formCard').style.display = 'none';
+          document.getElementById('confirmacion').style.display = 'block';
+          document.getElementById('idReclamo').textContent = res.id;
+        })
+        .catch(err => {
+          alert('Ocurrió un error al enviar el reclamo: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Enviar reclamo';
+        });
+    });
+  </script>
+</body>
+</html>
