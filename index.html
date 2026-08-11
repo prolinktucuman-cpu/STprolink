@@ -102,6 +102,14 @@
     <p style="color:#475467;font-size:14px;margin-top:10px">En el transcurso de las próximas horas un técnico se va a comunicar con vos para coordinar la visita.</p>
   </div>
 
+  <div class="card" id="duplicado" style="display:none; text-align:center; padding: 30px 10px;">
+    <h2 style="color:#b54708">Ya tenés una OT en curso</h2>
+    <p>Encontramos un reclamo activo asociado a tus datos:</p>
+    <p style="font-size:20px;font-weight:700" id="idDuplicado"></p>
+    <p style="color:#475467;font-size:14px;margin-top:4px">Estado actual: <strong id="estadoDuplicado"></strong></p>
+    <p style="color:#475467;font-size:14px;margin-top:10px">No hace falta que generes un reclamo nuevo: un técnico ya lo tiene asignado y se va a comunicar con vos para coordinar la visita.</p>
+  </div>
+
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbwS-i3O8RjdOJlpDPq_oiWmwVuVXxMW2-FlJ8_49oc1P5MJXRUImItLUmUv70LKQbCo/exec';
 
@@ -170,6 +178,14 @@
           document.getElementById('idReclamo').textContent = res.id;
         })
         .catch(err => {
+          if (err.message.startsWith('DUPLICADO:')) {
+            const [, idExistente, estadoExistente] = err.message.split(':');
+            document.getElementById('formCard').style.display = 'none';
+            document.getElementById('duplicado').style.display = 'block';
+            document.getElementById('idDuplicado').textContent = idExistente;
+            document.getElementById('estadoDuplicado').textContent = estadoExistente;
+            return;
+          }
           alert('Ocurrió un error al enviar el reclamo: ' + err.message);
           btn.disabled = false;
           btn.textContent = 'Enviar reclamo';
