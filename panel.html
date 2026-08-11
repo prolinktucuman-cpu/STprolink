@@ -1,365 +1,672 @@
-/*******************************************************
- * ProLink — API PANEL TÉCNICO (solo JSON, sin pantalla)
- * Este proyecto de Apps Script NO sirve HTML. Solo responde
- * JSON a pedidos que llegan desde panel.html (alojado en
- * GitHub Pages) vía fetch(). Así el técnico nunca visita una
- * URL de script.google.com y no ve el aviso de Google.
- *******************************************************/
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Panel Técnico — ProLink</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      background: #f2f4f7;
+      margin: 0;
+      padding: 14px 10px 60px;
+      color: #1a1a1a;
+    }
+    h1 { font-size: 19px; margin: 6px 4px 10px; }
 
-// ==================== CONFIGURACIÓN ====================
-const CONFIG = {
-  SHEET_ID: 'PEGAR_AQUI_EL_ID_DE_TU_GOOGLE_SHEET',
-  SHEETS: {
-    RECLAMOS: 'Reclamos_Clientes',
-    CATALOGO: 'Catalogo_Precios_y_Servicios',
-    REPARACIONES: 'Registro_Reparaciones',
-    COMPROBANTES: 'Comprobantes',
-    CATALOGO_OBRAS: 'Catalogo_Obras_Mantenimiento',
-    TAREAS_INTERNAS: 'Tareas_Internas',
-    REGISTRO_TAREAS_INTERNAS: 'Registro_Tareas_Internas'
-  },
-  NOMBRE_EMPRESA: 'ProLink',
-  CARPETA_COMPROBANTES: 'Comprobantes_ProLink',
-  LOGO_FILE_ID: 'PEGAR_AQUI_EL_ID_DEL_LOGO_EN_DRIVE',
-  // Token simple para que no cualquiera que encuentre la URL pueda escribir datos.
-  // Cambialo por algo propio, y poné el mismo valor en panel.html (const API_TOKEN).
-  // Ojo: como panel.html es un archivo público en GitHub, esto NO es seguridad fuerte,
-  // solo frena bots/curiosos casuales. Si el repo es privado, es más que suficiente.
-  API_TOKEN: 'cambiar-este-token'
-};
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; margin: 0 4px 14px; }
+    .tabBtn {
+      flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #d0d5dd;
+      background: #fff; font-size: 13px; font-weight: 600; color: #475467;
+    }
+    .tabBtn.active { background: #1570ef; border-color: #1570ef; color: #fff; }
 
-function ss_() { return SpreadsheetApp.openById(CONFIG.SHEET_ID); }
-function sheet_(name) { return ss_().getSheetByName(name); }
-
-function esFilaBasura_(row) {
-  const primera = row[0];
-  const resto = row.slice(1);
-  const restoVacio = resto.every(v => v === '' || v === null || v === undefined);
-  const primeraVacia = primera === '' || primera === null || primera === undefined;
-  if (primeraVacia && restoVacio) return true;
-  if (!primeraVacia && restoVacio) return true;
-  return false;
-}
-
-function generarId_(prefijo, sheet) {
-  const ultimaFila = sheet.getLastRow();
-  const numero = ultimaFila < 2 ? 1 : ultimaFila;
-  const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd');
-  return `${prefijo}-${ts}-${String(numero).padStart(4, '0')}`;
-}
-
-// ==================== LOGO ====================
-function logoBlob_() {
-  return DriveApp.getFileById(CONFIG.LOGO_FILE_ID).getBlob();
-}
-
-function logoDataUri() {
-  const cache = CacheService.getScriptCache();
-  const cacheado = cache.get('LOGO_DATA_URI');
-  if (cacheado) return cacheado;
-  const blob = logoBlob_();
-  const base64 = Utilities.base64Encode(blob.getBytes());
-  const dataUri = `data:${blob.getContentType()};base64,${base64}`;
-  cache.put('LOGO_DATA_URI', dataUri, 21600);
-  return dataUri;
-}
-
-// ==================== CATÁLOGOS ====================
-function obtenerCatalogo() {
-  const sh = sheet_(CONFIG.SHEETS.CATALOGO);
-  const data = sh.getDataRange().getValues();
-  data.shift();
-  return data
-    .filter(r => !esFilaBasura_(r) && r[0])
-    .map(r => ({ codigo: r[0], descripcion: r[1], categoria: r[2], precioCliente: r[3], comisionTecnico: r[4] }));
-}
-
-function obtenerCatalogoObras() {
-  const sh = sheet_(CONFIG.SHEETS.CATALOGO_OBRAS);
-  const data = sh.getDataRange().getValues();
-  data.shift();
-  return data
-    .filter(r => !esFilaBasura_(r) && r[0])
-    .map(r => ({ codigo: r[0], descripcion: r[1], categoria: r[2], unidad: r[3], precioUnitario: r[4] }));
-}
-
-// ==================== RECLAMOS DE CLIENTES ====================
-function obtenerTareas(filtros) {
-  filtros = filtros || {};
-  const sh = sheet_(CONFIG.SHEETS.RECLAMOS);
-  const data = sh.getDataRange().getValues();
-  data.shift();
-
-  return data
-    .map((r, i) => ({ fila: i + 2, raw: r }))
-    .filter(x => !esFilaBasura_(x.raw) && x.raw[0])
-    .map(x => {
-      const r = x.raw;
-      return {
-        fila: x.fila,
-        id: r[0], fecha: r[1], nombre: r[2], dni: r[3], direccion: r[4], barrio: r[5],
-        telefono: r[6], tipoFalla: r[7], descripcion: r[8], ubicacion: r[9],
-        estado: r[10], tecnico: r[11], zona: r[12], prioridad: r[13] || 'Verde'
-      };
-    })
-    .filter(t => {
-      if (filtros.estado && filtros.estado !== 'Todos' && t.estado !== filtros.estado) return false;
-      if (filtros.zona && filtros.zona !== 'Todas' && t.zona !== filtros.zona) return false;
-      if (filtros.prioridad && filtros.prioridad !== 'Todas' && t.prioridad !== filtros.prioridad) return false;
-      if (filtros.busqueda) {
-        const b = filtros.busqueda.toLowerCase();
-        if (!(`${t.nombre} ${t.direccion} ${t.id}`.toLowerCase().includes(b))) return false;
-      }
-      return true;
-    });
-}
-
-function asignarPrioridad(fila, prioridad, esInterna) {
-  const sh = esInterna ? sheet_(CONFIG.SHEETS.TAREAS_INTERNAS) : sheet_(CONFIG.SHEETS.RECLAMOS);
-  const columna = esInterna ? 7 : 14;
-  sh.getRange(fila, columna).setValue(prioridad);
-  return { ok: true };
-}
-
-function asignarTecnico(fila, tecnico) {
-  const sh = sheet_(CONFIG.SHEETS.RECLAMOS);
-  sh.getRange(fila, 12).setValue(tecnico);
-  sh.getRange(fila, 11).setValue('En proceso');
-  return { ok: true };
-}
-
-function cerrarTrabajo(data) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const shRec = sheet_(CONFIG.SHEETS.RECLAMOS);
-    const estadoActual = shRec.getRange(data.filaReclamo, 11).getValue();
-    const ESTADOS_YA_CERRADOS = ['Resuelto', 'Requiere Segunda Visita', 'Cancelado'];
-    if (ESTADOS_YA_CERRADOS.includes(estadoActual)) {
-      // Ya se cerró antes (doble click / doble tap). No generamos otro comprobante.
-      throw new Error('YA_CERRADO:' + estadoActual);
+    .filtros {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 14px; padding: 0 4px;
+    }
+    .filtros input, .filtros select {
+      flex: 1; min-width: 120px;
+      padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px;
     }
 
-    const shRep = sheet_(CONFIG.SHEETS.REPARACIONES);
-    const idRep = generarId_('REP', shRep);
-    const fecha = new Date();
+    .tarea {
+      background: #fff; border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+      border-left: 6px solid #d0d5dd;
+    }
+    .tarea.prio-Rojo { border-left-color: #d92d20; }
+    .tarea.prio-Amarillo { border-left-color: #f79009; }
+    .tarea.prio-Verde { border-left-color: #12b76a; }
+    .tarea.finalizada { opacity: 0.55; filter: grayscale(45%); border-left-color: #98a2b3; }
+    .tarea.finalizada .btnCerrar { background: #d0d5dd; color: #667085; }
 
-    const montoCobrado = data.tipoFallaConfirmado === 'Externa'
-      ? 0
-      : data.articulos.reduce((sum, a) => sum + (a.precioCliente * a.cantidad), 0);
-    const manoObra = data.articulos.reduce((sum, a) => sum + (a.comisionTecnico * a.cantidad), 0);
-    const articulosTexto = data.articulos.map(a => `${a.codigo} x${a.cantidad}`).join(', ');
+    .tarea .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .tarea .id { font-size: 12px; color: #667085; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+    }
+    .badge.Pendiente { background: #fef0c7; color: #b54708; }
+    .badge.En.proceso { background: #d1e9ff; color: #175cd3; }
+    .badge.Resuelto { background: #d1fadf; color: #027a48; }
+    .badge.Cancelado { background: #f2f4f7; color: #667085; }
+    .badge.Requiere.Segunda.Visita { background: #fee4e2; color: #b42318; }
+    .badge.prio-Rojo { background: #fee4e2; color: #b42318; }
+    .badge.prio-Amarillo { background: #fef0c7; color: #b54708; }
+    .badge.prio-Verde { background: #d1fadf; color: #027a48; }
 
-    shRep.appendRow([
-      idRep, data.idReclamo, fecha, data.tecnico, data.diagnostico, data.tipoFallaConfirmado,
-      articulosTexto, data.materiales || '', montoCobrado, data.metodoPago, manoObra,
-      data.estadoFinal, '', ''
-    ]);
+    .tarea h3 { margin: 6px 0 2px; font-size: 16px; }
+    .tarea p { margin: 2px 0; font-size: 13px; color: #475467; }
+    .tarea a { font-size: 12px; color: #1570ef; }
+    .btnRow { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .btnRow button {
+      flex: 1; min-width: 110px; padding: 9px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600;
+    }
+    .btnCerrar { background: #1570ef; color: #fff; }
+    .btnPrioridad { background: #eef2ff; color: #1570ef; }
 
-    shRec.getRange(data.filaReclamo, 11).setValue(data.estadoFinal);
+    /* Modal */
+    .overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 10; align-items: flex-end; justify-content: center;
+    }
+    .modalBox {
+      background: #fff; width: 100%; max-width: 500px; border-radius: 16px 16px 0 0;
+      padding: 20px 18px 30px; max-height: 88vh; overflow-y: auto;
+    }
+    .modalBox h2 { font-size: 17px; margin: 0 0 12px; }
+    .modalBox label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+    .modalBox input, .modalBox select, .modalBox textarea {
+      width: 100%; padding: 10px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px;
+    }
+    .articulo {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px;
+    }
+    .articulo label { flex: 1; margin: 0; font-weight: 400; }
+    .articulo input[type=number] { width: 60px; }
+    .totalLinea { font-size: 16px; font-weight: 700; margin-top: 10px; }
+    .modalBtns { display: flex; gap: 10px; margin-top: 18px; }
+    .modalBtns button { flex: 1; padding: 12px; border-radius: 8px; border: none; font-weight: 600; }
+    .cancelar { background: #f2f4f7; color: #344054; }
+    .confirmar { background: #1570ef; color: #fff; }
+    #loading, #loadingObras { text-align: center; color: #667085; padding: 30px; }
+  </style>
+</head>
+<body>
+  <div style="text-align:center; padding: 6px 0 2px;">
+    <img id="logoProLink" alt="ProLink" style="height:48px; display:none;">
+  </div>
+  <h1>📋 Panel Técnico</h1>
 
-    return { ok: true, id: idRep, montoCobrado, manoObra, filaReparacion: shRep.getLastRow() };
-  } finally {
-    lock.releaseLock();
-  }
-}
+  <div class="tabs">
+    <button class="tabBtn active" id="tabBtnClientes" onclick="cambiarTab('clientes')">Reclamos de Clientes</button>
+    <button class="tabBtn" id="tabBtnObras" onclick="cambiarTab('obras')">Obras y Mantenimiento</button>
+  </div>
 
-// ==================== OBRAS Y MANTENIMIENTO ====================
-function obtenerTareasInternas(filtros) {
-  filtros = filtros || {};
-  const sh = sheet_(CONFIG.SHEETS.TAREAS_INTERNAS);
-  const data = sh.getDataRange().getValues();
-  data.shift();
+  <!-- ===================== TAB CLIENTES ===================== -->
+  <div id="tabClientes">
+    <div class="filtros">
+      <input type="text" id="fBusqueda" placeholder="Buscar cliente / dirección">
+      <select id="fEstado">
+        <option value="Todos">Todos los estados</option>
+        <option>Pendiente</option>
+        <option>En proceso</option>
+        <option>Resuelto</option>
+        <option>Requiere Segunda Visita</option>
+        <option>Cancelado</option>
+      </select>
+      <select id="fPrioridad">
+        <option value="Todas">Toda prioridad</option>
+        <option value="Rojo">🔴 Alta</option>
+        <option value="Amarillo">🟡 Media</option>
+        <option value="Verde">🟢 Baja</option>
+      </select>
+      <select id="fZona">
+        <option value="Todas">Todas las zonas</option>
+      </select>
+    </div>
 
-  return data
-    .map((r, i) => ({ fila: i + 2, raw: r }))
-    .filter(x => !esFilaBasura_(x.raw) && x.raw[0])
-    .map(x => {
-      const r = x.raw;
-      return {
-        fila: x.fila, id: r[0], fecha: r[1], tipo: r[2], titulo: r[3], descripcion: r[4],
-        zona: r[5], prioridad: r[6] || 'Verde', estado: r[7], tecnico: r[8], fechaProgramada: r[9]
-      };
-    })
-    .filter(o => {
-      if (filtros.tipo && filtros.tipo !== 'Todos' && o.tipo !== filtros.tipo) return false;
-      if (filtros.estado && filtros.estado !== 'Todos' && o.estado !== filtros.estado) return false;
-      if (filtros.prioridad && filtros.prioridad !== 'Todas' && o.prioridad !== filtros.prioridad) return false;
-      if (filtros.busqueda) {
-        const b = filtros.busqueda.toLowerCase();
-        if (!(`${o.titulo} ${o.zona} ${o.id}`.toLowerCase().includes(b))) return false;
-      }
-      return true;
-    });
-}
+    <div id="listaTareas"><div id="loading">Cargando tareas...</div></div>
+  </div>
 
-function cerrarTareaInterna(data) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const shTareas = sheet_(CONFIG.SHEETS.TAREAS_INTERNAS);
-    const estadoActual = shTareas.getRange(data.filaTarea, 8).getValue();
-    const ESTADOS_YA_CERRADOS = ['Resuelto', 'Requiere Continuidad', 'Cancelado'];
-    if (ESTADOS_YA_CERRADOS.includes(estadoActual)) {
-      throw new Error('YA_CERRADO:' + estadoActual);
+  <!-- ===================== TAB OBRAS Y MANTENIMIENTO ===================== -->
+  <div id="tabObras" style="display:none">
+    <p style="font-size:12px;color:#667085;margin:0 4px 14px">
+      Las obras, mantenimientos y emergencias las carga la administración directamente en la planilla.
+      Acá solo podés consultarlas y cerrarlas cuando termines el trabajo.
+    </p>
+
+    <div class="filtros">
+      <input type="text" id="fBusquedaObra" placeholder="Buscar título / zona">
+      <select id="fTipoObra">
+        <option value="Todos">Todos los tipos</option>
+        <option>Obra</option>
+        <option>Mantenimiento</option>
+        <option>Emergencia</option>
+      </select>
+      <select id="fEstadoObra">
+        <option value="Todos">Todos los estados</option>
+        <option>Pendiente</option>
+        <option>En proceso</option>
+        <option>Resuelto</option>
+        <option>Cancelado</option>
+      </select>
+      <select id="fPrioridadObra">
+        <option value="Todas">Toda prioridad</option>
+        <option value="Rojo">🔴 Alta</option>
+        <option value="Amarillo">🟡 Media</option>
+        <option value="Verde">🟢 Baja</option>
+      </select>
+    </div>
+
+    <div id="listaObras"><div id="loadingObras">Cargando tareas internas...</div></div>
+  </div>
+
+  <!-- ===================== MODAL: Cerrar trabajo de CLIENTE ===================== -->
+  <div class="overlay" id="cOverlay">
+    <div class="modalBox">
+      <h2>Cerrar trabajo</h2>
+      <input type="hidden" id="cIdReclamo">
+      <input type="hidden" id="cFilaReclamo">
+
+      <label>Técnico</label>
+      <input type="text" id="cTecnico" placeholder="Tu nombre">
+
+      <label>Diagnóstico y solución realizada</label>
+      <textarea id="cDiagnostico"></textarea>
+
+      <label>Tipo de falla confirmado</label>
+      <select id="cTipoFalla">
+        <option value="Externa">Externa (mantenimiento de red - sin costo)</option>
+        <option value="Interna">Interna / accidente (con cobro)</option>
+      </select>
+
+      <div id="cCatalogoBox">
+        <label>Artículos / servicios utilizados</label>
+        <p style="font-size:12px;color:#667085;margin:0 0 6px">
+          Seleccioná igual los ítems usados aunque la falla sea externa: si no se cobra al cliente,
+          la empresa reconoce esa mano de obra al técnico en la liquidación.
+        </p>
+        <div id="cListaCatalogo"></div>
+        <div class="totalLinea" id="cTotalCobrado">Total a cobrar al cliente: $0</div>
+        <div style="font-size:14px;color:#175cd3;font-weight:600;margin-top:4px" id="cTotalEmpresa">Total a pagar por la empresa: $0</div>
+      </div>
+
+      <label>Materiales usados (detalle libre)</label>
+      <input type="text" id="cMateriales">
+
+      <label>Método de pago recibido</label>
+      <select id="cMetodoPago">
+        <option>Pendiente de Cobro en Factura</option>
+        <option>Efectivo</option>
+        <option>Transferencia</option>
+      </select>
+      <p style="font-size:11px;color:#667085;margin:4px 0 0">
+        Si elegís Efectivo o Transferencia, al confirmar se genera y descarga automáticamente
+        el comprobante en PDF para enviarle al cliente por WhatsApp.
+      </p>
+
+      <label>Estado final</label>
+      <select id="cEstadoFinal">
+        <option>Resuelto</option>
+        <option>Requiere Segunda Visita</option>
+        <option>Cancelado</option>
+      </select>
+
+      <div class="modalBtns">
+        <button class="cancelar" onclick="cerrarModal('cOverlay')">Cancelar</button>
+        <button class="confirmar" onclick="confirmarCierreCliente()">Confirmar cierre</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: Cerrar tarea de OBRA/MANTENIMIENTO ===================== -->
+  <div class="overlay" id="oOverlay">
+    <div class="modalBox">
+      <h2>Cerrar tarea interna</h2>
+      <input type="hidden" id="oIdTarea">
+      <input type="hidden" id="oFilaTarea">
+
+      <label>Técnico</label>
+      <input type="text" id="oTecnico" placeholder="Tu nombre">
+
+      <label>Trabajo realizado</label>
+      <textarea id="oTrabajoRealizado"></textarea>
+
+      <label>Ítems del catálogo consumidos</label>
+      <div id="oListaCatalogo"></div>
+      <div class="totalLinea" id="oTotal">Total a liquidar: $0</div>
+
+      <label>Materiales usados (detalle libre)</label>
+      <input type="text" id="oMateriales">
+
+      <label>Estado final</label>
+      <select id="oEstadoFinal">
+        <option>Resuelto</option>
+        <option>Requiere Continuidad</option>
+        <option>Cancelado</option>
+      </select>
+
+      <div class="modalBtns">
+        <button class="cancelar" onclick="cerrarModal('oOverlay')">Cancelar</button>
+        <button class="confirmar" onclick="confirmarCierreObra()">Confirmar cierre</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycby0sm9pHa9B3seLq1seHFmVRq1gRUbRjyPE1GyP0GP7KYc4SLTfI5qT-YvfTN1X4oAU4A/exec';
+    const API_TOKEN = 'pl-tuc-2323MBLmZ';
+
+    function apiPanel(action, payload) {
+      payload = payload || {};
+      payload.token = API_TOKEN;
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight CORS
+        body: JSON.stringify({ action, payload })
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) throw new Error(res.error || 'Error desconocido');
+          return res.data;
+        });
     }
 
-    const shReg = sheet_(CONFIG.SHEETS.REGISTRO_TAREAS_INTERNAS);
-    const idCierre = generarId_('CINT', shReg);
-    const fecha = new Date();
+    // Carga el logo de forma asincrónica
+    const logoImg = document.getElementById('logoProLink');
+    logoImg.onerror = () => { logoImg.style.display = 'none'; };
+    apiPanel('logoDataUri', {})
+      .then(uri => {
+        if (uri) { logoImg.src = uri; logoImg.style.display = 'inline-block'; }
+      })
+      .catch(err => console.error('No se pudo cargar el logo:', err.message));
 
-    const montoTotal = data.items.reduce((sum, it) => sum + (it.precioUnitario * it.cantidad), 0);
-    const itemsTexto = data.items.map(it => `${it.codigo} x${it.cantidad}`).join(', ');
+    // ==================== ESTADO GLOBAL ====================
+    let catalogo = [];          // catálogo clientes
+    let catalogoObras = [];     // catálogo obras/mantenimiento
+    let tareaActual = null;     // tarea de cliente seleccionada
+    let obraActual = null;      // tarea interna seleccionada
 
-    shReg.appendRow([idCierre, data.idTarea, fecha, data.tecnico, data.trabajoRealizado, itemsTexto, data.materiales || '', montoTotal, data.estadoFinal]);
+    const ORDEN_PRIORIDAD = { Rojo: 0, Amarillo: 1, Verde: 2 };
 
-    shTareas.getRange(data.filaTarea, 8).setValue(data.estadoFinal);
+    function ordenarPorPrioridad(lista, campo) {
+      if (!Array.isArray(lista)) return [];
+      return lista.slice().sort((a, b) => {
+        const pa = ORDEN_PRIORIDAD[a[campo]] ?? 3;
+        const pb = ORDEN_PRIORIDAD[b[campo]] ?? 3;
+        return pa - pb;
+      });
+    }
 
-    return { ok: true, id: idCierre, montoTotal: montoTotal };
-  } finally {
-    lock.releaseLock();
-  }
-}
+    // Estados que ya no requieren más acción del técnico -> se muestran grisados.
+    // "Requiere Segunda Visita" / "Requiere Continuidad" quedan activos a propósito.
+    const ESTADOS_FINALIZADOS = ['Resuelto', 'Cancelado'];
+    function estaFinalizada(estado) {
+      return ESTADOS_FINALIZADOS.includes(estado);
+    }
 
-// ==================== COMPROBANTES PDF ====================
-function generarNumeroComprobante_() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const props = PropertiesService.getScriptProperties();
-    let ultimo = Number(props.getProperty('ULTIMO_COMPROBANTE') || '0');
-    ultimo += 1;
-    props.setProperty('ULTIMO_COMPROBANTE', String(ultimo));
-    return String(ultimo).padStart(6, '0');
-  } finally {
-    lock.releaseLock();
-  }
-}
+    function labelPrioridad(p) {
+      if (p === 'Rojo') return '🔴 Alta';
+      if (p === 'Amarillo') return '🟡 Media';
+      if (p === 'Verde') return '🟢 Baja';
+      return p || '—';
+    }
 
-function carpetaComprobantes_() {
-  const nombre = CONFIG.CARPETA_COMPROBANTES;
-  const carpetas = DriveApp.getFoldersByName(nombre);
-  return carpetas.hasNext() ? carpetas.next() : DriveApp.createFolder(nombre);
-}
+    function cerrarModal(id) {
+      document.getElementById(id).style.display = 'none';
+    }
 
-function generarPdfComprobante_(datos) {
-  const doc = DocumentApp.create(`Comprobante_${datos.numero}_temp`);
-  const body = doc.getBody();
-  body.clear();
-  body.setMarginTop(30).setMarginBottom(30).setMarginLeft(40).setMarginRight(40);
+    // ==================== TABS ====================
+    function cambiarTab(tab) {
+      document.getElementById('tabClientes').style.display = tab === 'clientes' ? 'block' : 'none';
+      document.getElementById('tabObras').style.display = tab === 'obras' ? 'block' : 'none';
+      document.getElementById('tabBtnClientes').classList.toggle('active', tab === 'clientes');
+      document.getElementById('tabBtnObras').classList.toggle('active', tab === 'obras');
+    }
 
-  const imagen = body.appendImage(logoBlob_());
-  const anchoOriginal = imagen.getWidth();
-  const altoOriginal = imagen.getHeight();
-  const anchoFinal = 160;
-  imagen.setWidth(anchoFinal);
-  imagen.setHeight(Math.round(altoOriginal * (anchoFinal / anchoOriginal)));
+    // ==================== CATÁLOGOS ====================
+    function cargarCatalogo() {
+      apiPanel('obtenerCatalogo', {})
+        .then(c => { catalogo = c || []; })
+        .catch(err => alert('Error cargando catálogo de clientes: ' + err.message));
+    }
+    function cargarCatalogoObras() {
+      apiPanel('obtenerCatalogoObras', {})
+        .then(c => { catalogoObras = c || []; })
+        .catch(err => alert('Error cargando catálogo de obras: ' + err.message));
+    }
 
-  body.appendParagraph(' ');
-  body.appendParagraph('COMPROBANTE DE PAGO').setHeading(DocumentApp.ParagraphHeading.HEADING1).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  body.appendParagraph(`N° ${datos.numero}`).setAlignment(DocumentApp.HorizontalAlignment.CENTER).setBold(true);
-  body.appendParagraph(' ');
+    // ==================== RECLAMOS DE CLIENTES ====================
+    function cargarTareas() {
+      const filtros = {
+        busqueda: document.getElementById('fBusqueda').value,
+        estado: document.getElementById('fEstado').value,
+        zona: document.getElementById('fZona').value,
+        prioridad: document.getElementById('fPrioridad').value
+      };
+      apiPanel('obtenerTareas', { filtros })
+        .then(renderTareas)
+        .catch(err => {
+          document.getElementById('listaTareas').innerHTML =
+            '<div id="loading" style="color:#d92d20">Error cargando reclamos: ' + err.message + '</div>';
+        });
+    }
 
-  const fechaTexto = Utilities.formatDate(datos.fecha, Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
-  body.appendParagraph(`Fecha: ${fechaTexto}`);
-  body.appendParagraph(`Cliente: ${datos.cliente}`);
-  body.appendParagraph(`Dirección: ${datos.direccion}`);
-  body.appendParagraph(' ');
+    function renderTareas(tareas) {
+      tareas = ordenarPorPrioridad(tareas, 'prioridad');
+      const cont = document.getElementById('listaTareas');
+      if (!tareas.length) {
+        cont.innerHTML = '<div id="loading">No hay tareas para este filtro.</div>';
+        return;
+      }
+      cont.innerHTML = tareas.map(t => {
+        const finalizada = estaFinalizada(t.estado);
+        return `
+        <div class="tarea prio-${t.prioridad || 'Verde'}${finalizada ? ' finalizada' : ''}">
+          <div class="top">
+            <span class="id">${t.id}</span>
+            <div class="badges">
+              <span class="badge prio-${t.prioridad || 'Verde'}">${labelPrioridad(t.prioridad)}</span>
+              <span class="badge ${String(t.estado).replace(/ /g, '.')}">${t.estado}</span>
+            </div>
+          </div>
+          <h3>${t.nombre}</h3>
+          <p>${t.direccion}${t.barrio ? ' (' + t.barrio + ')' : ''} — ${t.telefono}</p>
+          <p><strong>${t.tipoFalla}:</strong> ${t.descripcion}</p>
+          ${t.ubicacion && t.ubicacion !== 'Sin ubicación' ? `<a href="${t.ubicacion}" target="_blank">📍 Ver ubicación</a>` : ''}
+          <div class="btnRow">
+            <select onchange="cambiarPrioridadCliente(${t.fila}, this.value)" ${finalizada ? 'disabled' : ''} style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+              <option value="Rojo" ${t.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
+              <option value="Amarillo" ${t.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
+              <option value="Verde" ${t.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
+            </select>
+            ${finalizada
+              ? `<button class="btnCerrar" disabled>Ya finalizado</button>`
+              : `<button class="btnCerrar" onclick='abrirModalCliente(${JSON.stringify(t)})'>Cerrar trabajo</button>`}
+          </div>
+        </div>
+      `;
+      }).join('');
+    }
 
-  const tabla = body.appendTable([['Ítem', 'Monto'], ['Visita técnica', `$${datos.monto}`]]);
-  tabla.getRow(0).editAsText().setBold(true);
+    function cambiarPrioridadCliente(fila, prioridad) {
+      apiPanel('asignarPrioridad', { fila, prioridad, esInterna: false })
+        .then(() => cargarTareas())
+        .catch(err => alert('Error: ' + err.message));
+    }
 
-  body.appendParagraph(' ');
-  body.appendParagraph(`TOTAL ABONADO: $${datos.monto}`).setBold(true);
-  body.appendParagraph(' ');
-  body.appendParagraph(`Técnico: ${datos.tecnico}`);
-  body.appendParagraph(' ');
-  body.appendParagraph(`${CONFIG.NOMBRE_EMPRESA} - Comprobante interno de pago por visita técnica.`).setItalic(true);
+    function abrirModalCliente(t) {
+      tareaActual = t;
+      document.getElementById('cIdReclamo').value = t.id;
+      document.getElementById('cFilaReclamo').value = t.fila;
+      renderCatalogoCliente();
+      const btn = document.querySelector('#cOverlay .confirmar');
+      btn.disabled = false;
+      btn.textContent = 'Confirmar cierre';
+      document.getElementById('cOverlay').style.display = 'flex';
+    }
 
-  doc.saveAndClose();
+    document.getElementById('cTipoFalla').addEventListener('change', calcularTotalCliente);
 
-  const archivoDoc = DriveApp.getFileById(doc.getId());
-  const pdfBlob = archivoDoc.getAs('application/pdf');
-  const carpeta = carpetaComprobantes_();
-  const pdfFile = carpeta.createFile(pdfBlob).setName(`Comprobante_${datos.numero}.pdf`);
-  archivoDoc.setTrashed(true);
+    function renderCatalogoCliente() {
+      const box = document.getElementById('cListaCatalogo');
+      box.innerHTML = catalogo.map((a, i) => `
+        <div class="articulo">
+          <input type="number" min="0" value="0" id="ccant_${i}" onchange="calcularTotalCliente()">
+          <label>${a.descripcion} — $${a.precioCliente}</label>
+        </div>
+      `).join('');
+      calcularTotalCliente();
+    }
 
-  return { base64: Utilities.base64Encode(pdfBlob.getBytes()), fileUrl: pdfFile.getUrl() };
-}
+    function calcularTotalCliente() {
+      const tipoFalla = document.getElementById('cTipoFalla').value;
+      let totalCliente = 0;
+      let totalEmpresa = 0;
+      catalogo.forEach((a, i) => {
+        const cant = Number(document.getElementById('ccant_' + i).value) || 0;
+        totalEmpresa += cant * a.comisionTecnico;
+        if (tipoFalla === 'Interna') totalCliente += cant * a.precioCliente;
+      });
+      document.getElementById('cTotalCobrado').textContent =
+        tipoFalla === 'Interna'
+          ? 'Total a cobrar al cliente: $' + totalCliente
+          : 'Total a cobrar al cliente: $0 (falla externa, cubierta)';
+      document.getElementById('cTotalEmpresa').textContent = 'Total a pagar por la empresa: $' + totalEmpresa;
+    }
 
-function emitirComprobante(data) {
-  const numero = generarNumeroComprobante_();
-  const fecha = new Date();
+    function confirmarCierreCliente() {
+      const btn = document.querySelector('#cOverlay .confirmar');
+      if (btn.disabled) return; // ya se está procesando, ignoramos clicks extra
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
 
-  const pdf = generarPdfComprobante_({
-    numero: numero, cliente: data.cliente, direccion: data.direccion,
-    monto: data.monto, tecnico: data.tecnico, fecha: fecha
-  });
+      const tipoFalla = document.getElementById('cTipoFalla').value;
+      const articulos = [];
+      catalogo.forEach((a, i) => {
+        const cant = Number(document.getElementById('ccant_' + i).value) || 0;
+        if (cant > 0) articulos.push({ ...a, cantidad: cant });
+      });
 
-  const shComp = sheet_(CONFIG.SHEETS.COMPROBANTES);
-  shComp.appendRow([numero, fecha, data.idReparacion, data.idReclamo, data.cliente, data.direccion, 'Visita técnica', data.monto, data.tecnico, pdf.fileUrl]);
+      const data = {
+        idReclamo: document.getElementById('cIdReclamo').value,
+        filaReclamo: Number(document.getElementById('cFilaReclamo').value),
+        tecnico: document.getElementById('cTecnico').value,
+        diagnostico: document.getElementById('cDiagnostico').value,
+        tipoFallaConfirmado: tipoFalla,
+        articulos: articulos,
+        materiales: document.getElementById('cMateriales').value,
+        metodoPago: document.getElementById('cMetodoPago').value,
+        estadoFinal: document.getElementById('cEstadoFinal').value
+      };
 
-  if (data.filaReparacion) {
-    const shRep = sheet_(CONFIG.SHEETS.REPARACIONES);
-    shRep.getRange(data.filaReparacion, 13).setValue('Sí');
-    shRep.getRange(data.filaReparacion, 14).setValue(numero);
-  }
+      apiPanel('cerrarTrabajo', { data })
+        .then(res => {
+          const clientePago = data.metodoPago === 'Efectivo' || data.metodoPago === 'Transferencia';
+          if (clientePago && res.montoCobrado > 0) {
+            emitirComprobantePDF(res, data);
+          } else {
+            cerrarModal('cOverlay');
+            cargarTareas();
+          }
+        })
+        .catch(err => {
+          if (err.message.startsWith('YA_CERRADO:')) {
+            alert('Este trabajo ya había sido cerrado (estado: ' + err.message.split(':')[1] + '). No se generó un comprobante nuevo.');
+            cerrarModal('cOverlay');
+            cargarTareas();
+            return;
+          }
+          alert('Error: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Confirmar cierre';
+        });
+    }
 
-  return { ok: true, numero: numero, pdfBase64: pdf.base64, fileUrl: pdf.fileUrl };
-}
+    function emitirComprobantePDF(resCierre, dataCierre) {
+      apiPanel('emitirComprobante', {
+        data: {
+          idReparacion: resCierre.id,
+          idReclamo: dataCierre.idReclamo,
+          filaReparacion: resCierre.filaReparacion,
+          cliente: tareaActual.nombre,
+          direccion: tareaActual.direccion,
+          monto: resCierre.montoCobrado,
+          tecnico: dataCierre.tecnico
+        }
+      })
+        .then(resComp => {
+          descargarComprobante(resComp.pdfBase64, resComp.numero);
+          cerrarModal('cOverlay');
+          cargarTareas();
+        })
+        .catch(err => {
+          alert('El trabajo se cerró, pero no se pudo generar el comprobante: ' + err.message);
+          cerrarModal('cOverlay');
+          cargarTareas();
+        });
+    }
 
-// ==================== ROUTER JSON (llamado desde panel.html vía fetch) ====================
-/**
- * Acciones de solo lectura -> se pueden llamar por GET o POST.
- * Acciones que escriben datos -> exigen el token en el payload.
- */
-const ACCIONES_LECTURA = ['obtenerCatalogo', 'obtenerCatalogoObras', 'obtenerTareas', 'obtenerTareasInternas', 'logoDataUri'];
-const ACCIONES_ESCRITURA = ['asignarPrioridad', 'asignarTecnico', 'cerrarTrabajo', 'cerrarTareaInterna', 'emitirComprobante'];
+    function descargarComprobante(base64, numero) {
+      const link = document.createElement('a');
+      link.href = 'data:application/pdf;base64,' + base64;
+      link.download = 'Comprobante_' + numero + '.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      alert('Comprobante N° ' + numero + ' generado. Se descargó para que lo envíes por WhatsApp al cliente.');
+    }
 
-function ejecutarAccion_(action, payload) {
-  payload = payload || {};
-  const esEscritura = ACCIONES_ESCRITURA.includes(action);
-  if (esEscritura && payload.token !== CONFIG.API_TOKEN) {
-    throw new Error('Token inválido.');
-  }
+    // ==================== OBRAS Y MANTENIMIENTO ====================
+    function cargarObras() {
+      const filtros = {
+        busqueda: document.getElementById('fBusquedaObra').value,
+        tipo: document.getElementById('fTipoObra').value,
+        estado: document.getElementById('fEstadoObra').value,
+        prioridad: document.getElementById('fPrioridadObra').value
+      };
+      apiPanel('obtenerTareasInternas', { filtros })
+        .then(renderObras)
+        .catch(err => {
+          document.getElementById('listaObras').innerHTML =
+            '<div id="loadingObras" style="color:#d92d20">Error cargando obras: ' + err.message + '</div>';
+        });
+    }
 
-  switch (action) {
-    case 'obtenerCatalogo': return obtenerCatalogo();
-    case 'obtenerCatalogoObras': return obtenerCatalogoObras();
-    case 'obtenerTareas': return obtenerTareas(payload.filtros);
-    case 'obtenerTareasInternas': return obtenerTareasInternas(payload.filtros);
-    case 'logoDataUri': return logoDataUri();
-    case 'asignarPrioridad': return asignarPrioridad(payload.fila, payload.prioridad, payload.esInterna);
-    case 'asignarTecnico': return asignarTecnico(payload.fila, payload.tecnico);
-    case 'cerrarTrabajo': return cerrarTrabajo(payload.data);
-    case 'cerrarTareaInterna': return cerrarTareaInterna(payload.data);
-    case 'emitirComprobante': return emitirComprobante(payload.data);
-    default: throw new Error('Acción desconocida: ' + action);
-  }
-}
+    function renderObras(obras) {
+      obras = ordenarPorPrioridad(obras, 'prioridad');
+      const cont = document.getElementById('listaObras');
+      if (!obras.length) {
+        cont.innerHTML = '<div id="loadingObras">No hay tareas internas para este filtro.</div>';
+        return;
+      }
+      cont.innerHTML = obras.map(o => {
+        const finalizada = estaFinalizada(o.estado);
+        return `
+        <div class="tarea prio-${o.prioridad || 'Verde'}${finalizada ? ' finalizada' : ''}">
+          <div class="top">
+            <span class="id">${o.id}</span>
+            <div class="badges">
+              <span class="badge prio-${o.prioridad || 'Verde'}">${labelPrioridad(o.prioridad)}</span>
+              <span class="badge ${String(o.estado).replace(/ /g, '.')}">${o.estado}</span>
+            </div>
+          </div>
+          <h3>${o.titulo}</h3>
+          <p><strong>${o.tipo}</strong>${o.zona ? ' — ' + o.zona : ''}</p>
+          <p>${o.descripcion || ''}</p>
+          ${o.tecnico ? `<p>Asignado a: ${o.tecnico}</p>` : ''}
+          ${o.fechaProgramada ? `<p>Programada: ${o.fechaProgramada}</p>` : ''}
+          <div class="btnRow">
+            <select onchange="cambiarPrioridadObra(${o.fila}, this.value)" ${finalizada ? 'disabled' : ''} style="flex:1;padding:9px;border-radius:8px;border:1px solid #d0d5dd;font-size:12px">
+              <option value="Rojo" ${o.prioridad === 'Rojo' ? 'selected' : ''}>🔴 Alta</option>
+              <option value="Amarillo" ${o.prioridad === 'Amarillo' ? 'selected' : ''}>🟡 Media</option>
+              <option value="Verde" ${o.prioridad === 'Verde' ? 'selected' : ''}>🟢 Baja</option>
+            </select>
+            ${finalizada
+              ? `<button class="btnCerrar" disabled>Ya finalizada</button>`
+              : `<button class="btnCerrar" onclick='abrirModalObra(${JSON.stringify(o)})'>Cerrar tarea</button>`}
+          </div>
+        </div>
+      `;
+      }).join('');
+    }
 
-function jsonOutput_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
+    function cambiarPrioridadObra(fila, prioridad) {
+      apiPanel('asignarPrioridad', { fila, prioridad, esInterna: true })
+        .then(() => cargarObras())
+        .catch(err => alert('Error: ' + err.message));
+    }
 
-function doGet(e) {
-  try {
-    const action = e.parameter.action;
-    if (!action) return jsonOutput_({ ok: true, mensaje: 'API Panel Técnico ProLink activa.' });
-    const payload = e.parameter.payload ? JSON.parse(e.parameter.payload) : {};
-    const data = ejecutarAccion_(action, payload);
-    return jsonOutput_({ ok: true, data: data });
-  } catch (err) {
-    return jsonOutput_({ ok: false, error: err.message });
-  }
-}
+    function abrirModalObra(o) {
+      obraActual = o;
+      document.getElementById('oIdTarea').value = o.id;
+      document.getElementById('oFilaTarea').value = o.fila;
+      renderCatalogoObra();
+      const btn = document.querySelector('#oOverlay .confirmar');
+      btn.disabled = false;
+      btn.textContent = 'Confirmar cierre';
+      document.getElementById('oOverlay').style.display = 'flex';
+    }
 
-function doPost(e) {
-  try {
-    const body = JSON.parse(e.postData.contents);
-    const data = ejecutarAccion_(body.action, body.payload);
-    return jsonOutput_({ ok: true, data: data });
-  } catch (err) {
-    return jsonOutput_({ ok: false, error: err.message });
-  }
-}
+    function renderCatalogoObra() {
+      const box = document.getElementById('oListaCatalogo');
+      box.innerHTML = catalogoObras.map((a, i) => `
+        <div class="articulo">
+          <input type="number" min="0" value="0" id="ocant_${i}" onchange="calcularTotalObra()">
+          <label>${a.descripcion} (${a.unidad}) — $${a.precioUnitario}/u</label>
+        </div>
+      `).join('');
+      calcularTotalObra();
+    }
+
+    function calcularTotalObra() {
+      let total = 0;
+      catalogoObras.forEach((a, i) => {
+        const cant = Number(document.getElementById('ocant_' + i).value) || 0;
+        total += cant * a.precioUnitario;
+      });
+      document.getElementById('oTotal').textContent = 'Total a liquidar: $' + total;
+    }
+
+    function confirmarCierreObra() {
+      const btn = document.querySelector('#oOverlay .confirmar');
+      if (btn.disabled) return; // ya se está procesando
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+
+      const items = [];
+      catalogoObras.forEach((a, i) => {
+        const cant = Number(document.getElementById('ocant_' + i).value) || 0;
+        if (cant > 0) items.push({ ...a, cantidad: cant });
+      });
+
+      const data = {
+        idTarea: document.getElementById('oIdTarea').value,
+        filaTarea: Number(document.getElementById('oFilaTarea').value),
+        tecnico: document.getElementById('oTecnico').value,
+        trabajoRealizado: document.getElementById('oTrabajoRealizado').value,
+        items: items,
+        materiales: document.getElementById('oMateriales').value,
+        estadoFinal: document.getElementById('oEstadoFinal').value
+      };
+
+      apiPanel('cerrarTareaInterna', { data })
+        .then(() => {
+          cerrarModal('oOverlay');
+          cargarObras();
+        })
+        .catch(err => {
+          if (err.message.startsWith('YA_CERRADO:')) {
+            alert('Esta tarea ya había sido cerrada (estado: ' + err.message.split(':')[1] + ').');
+            cerrarModal('oOverlay');
+            cargarObras();
+            return;
+          }
+          alert('Error: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Confirmar cierre';
+        });
+    }
+
+    // ==================== INIT ====================
+    document.getElementById('fBusqueda').addEventListener('input', cargarTareas);
+    document.getElementById('fEstado').addEventListener('change', cargarTareas);
+    document.getElementById('fZona').addEventListener('change', cargarTareas);
+    document.getElementById('fPrioridad').addEventListener('change', cargarTareas);
+
+    document.getElementById('fBusquedaObra').addEventListener('input', cargarObras);
+    document.getElementById('fTipoObra').addEventListener('change', cargarObras);
+    document.getElementById('fEstadoObra').addEventListener('change', cargarObras);
+    document.getElementById('fPrioridadObra').addEventListener('change', cargarObras);
+
+    cargarCatalogo();
+    cargarCatalogoObras();
+    cargarTareas();
+    cargarObras();
+  </script>
+</body>
+</html>
